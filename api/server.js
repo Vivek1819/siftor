@@ -10,6 +10,7 @@ app.use(express.json());
 
 let requestQueue = null; // Declare requestQueue at a higher scope
 const visitedUrls = new Set(); // Set to track visited URLs
+const scrapedData = []; // Array to collect scraped data
 
 const fs = require('fs');
 const path = require('path');
@@ -113,10 +114,11 @@ app.post('/scrape', async (req, res) => {
             const headings = await page.$$eval('h1, h2, h3, h4, h5, h6', elements => elements.map(el => el.innerText));
             const paragraphs = await page.$$eval('p', elements => elements.map(el => el.innerText));
 
-            // Send back the result for the first URL only
-            if (request.id === '0') {
-                res.json({ content, headings, paragraphs });
-            }
+            // Log the scraped data
+            console.log(`Scraped data from ${request.url}:`, { headings, paragraphs });
+
+            // Collect the scraped data
+            scrapedData.push({ url: request.url, content, headings, paragraphs });
 
             // Extract links from the page and enqueue them for crawling
             const links = await page.$$eval('a', anchors => anchors.map(anchor => anchor.href));
@@ -125,7 +127,7 @@ app.post('/scrape', async (req, res) => {
                     console.log(`Adding URL to queue: ${link}`);
                     requestQueue.addRequest({ url: link });
                 } else {
-                    console.log(`Invalid URL skipped: ${link}`);
+                    console.log(`Invalid or already visited URL skipped: ${link}`);
                 }
             });
         },
@@ -140,6 +142,16 @@ app.post('/scrape', async (req, res) => {
     try {
         // Start the crawler
         await crawler.run(); // Run the crawler
+        console.log('Crawling completed. Sending response...');
+
+        // Combine all scraped data into a single object
+        const combinedData = {
+            content: scrapedData.map(data => data.content).join('\n'), // Combine content
+            headings: scrapedData.flatMap(data => data.headings), // Flatten headings
+            paragraphs: scrapedData.flatMap(data => data.paragraphs), // Flatten paragraphs
+        };
+
+        res.json(combinedData); // Send the combined scraped data as the response
     } catch (error) {
         console.error('Crawler encountered an error:', error);
         return res.status(500).json({ error: 'Crawler encountered an error.' });
@@ -156,7 +168,6 @@ function isSameDomain(base, link) {
         return false;
     }
 }
-
 
 // Forcefully unlock lockfiles on app shutdown
 process.on('SIGINT', async () => {
