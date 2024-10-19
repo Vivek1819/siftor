@@ -2,12 +2,12 @@ import { useState } from 'react';
 
 function App() {
     const [url, setUrl] = useState('');
-    const [result, setResult] = useState({ content: '', headings: [], paragraphs: [] });
+    const [result, setResult] = useState({ content: '', headings: [], paragraphs: [], codes: [] });
     const [error, setError] = useState('');
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setError(''); // Reset error before fetching
+        setError(''); 
         const response = await fetch('http://localhost:5000/scrape', {
             method: 'POST',
             headers: {
@@ -18,11 +18,11 @@ function App() {
 
         if (response.ok) {
             const data = await response.json();
-            setResult(data); // Ensure this correctly sets the result
+            setResult(data); 
         } else {
             const errorData = await response.json();
             setError(errorData.error || 'Failed to scrape the website');
-            setResult({ content: '', headings: [], paragraphs: [] });
+            setResult({ content: '', headings: [], paragraphs: [], codes: [] });
         }
     };
 
@@ -62,6 +62,19 @@ function App() {
                             ))
                         ) : (
                             <li>No paragraphs found</li>
+                        )}
+                    </ul>
+
+                    <h2>Code Snippets</h2>
+                    <ul>
+                        {result.codes.length > 0 ? (
+                            result.codes.map((code, index) => (
+                                <li key={index}>
+                                    <pre className="bg-gray-100 p-2 rounded"><code>{code}</code></pre>
+                                </li>
+                            ))
+                        ) : (
+                            <li>No code snippets found</li>
                         )}
                     </ul>
                 </>
