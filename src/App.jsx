@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState } from 'react';
 
 function App() {
   const [url, setUrl] = useState('');
-  const [result, setResult] = useState('');
+  const [result, setResult] = useState({ content: '', headings: [], paragraphs: [] });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -13,8 +13,13 @@ function App() {
       },
       body: JSON.stringify({ url }),
     });
-    const data = await response.json();
-    setResult(data.content);
+
+    if (response.ok) {
+      const data = await response.json();
+      setResult(data); // Ensure this correctly sets the result
+    } else {
+      setResult({ content: '', headings: [], paragraphs: [], error: 'Failed to scrape the website' });
+    }
   };
 
   return (
@@ -28,9 +33,26 @@ function App() {
         />
         <button type="submit">Scrape</button>
       </form>
-      <p>{result}</p>
+      {result.error ? (
+        <p>{result.error}</p>
+      ) : (
+        <>
+          <h2>Headings</h2>
+          <ul>
+            {result.headings.map((heading, index) => (
+              <li key={index}>{heading}</li>
+            ))}
+          </ul>
+          <h2>Paragraphs</h2>
+          <ul>
+            {result.paragraphs.map((paragraph, index) => (
+              <li key={index}>{paragraph}</li>
+            ))}
+          </ul>
+        </>
+      )}
     </>
-  )
+  );
 }
 
-export default App
+export default App;
