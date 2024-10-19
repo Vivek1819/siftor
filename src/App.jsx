@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 function App() {
     const [url, setUrl] = useState('');
-    const [result, setResult] = useState({ content: '', headings: [], paragraphs: [], codes: [] });
+    const [result, setResult] = useState([]);
     const [error, setError] = useState('');
 
     const handleSubmit = async (e) => {
@@ -22,8 +22,26 @@ function App() {
         } else {
             const errorData = await response.json();
             setError(errorData.error || 'Failed to scrape the website');
-            setResult({ content: '', headings: [], paragraphs: [], codes: [] });
+            setResult([]); 
         }
+    };
+
+    const renderElement = (item, index) => {
+        if (item.type === 'heading') {
+            const HeadingTag = item.tag.toLowerCase(); 
+            return <HeadingTag key={index} className="font-bold">{item.content}</HeadingTag>;
+        }
+        if (item.type === 'paragraph') {
+            return <p key={index} className="mb-2">{item.content}</p>;
+        }
+        if (item.type === 'code') {
+            return (
+                <pre key={index} className="bg-gray-100 p-2 mb-4 rounded">
+                    <code>{item.content}</code>
+                </pre>
+            );
+        }
+        return null;
     };
 
     return (
@@ -41,43 +59,11 @@ function App() {
 
             {error && <p className="text-red-500">{error}</p>}
 
-            {!error && (
-                <>
-                    <h2>Headings</h2>
-                    <ul>
-                        {result.headings.length > 0 ? (
-                            result.headings.map((heading, index) => (
-                                <li key={index}>{heading}</li>
-                            ))
-                        ) : (
-                            <li>No headings found</li>
-                        )}
-                    </ul>
-
-                    <h2>Paragraphs</h2>
-                    <ul>
-                        {result.paragraphs.length > 0 ? (
-                            result.paragraphs.map((paragraph, index) => (
-                                <li key={index}>{paragraph}</li>
-                            ))
-                        ) : (
-                            <li>No paragraphs found</li>
-                        )}
-                    </ul>
-
-                    <h2>Code Snippets</h2>
-                    <ul>
-                        {result.codes.length > 0 ? (
-                            result.codes.map((code, index) => (
-                                <li key={index}>
-                                    <pre className="bg-gray-100 p-2 rounded"><code>{code}</code></pre>
-                                </li>
-                            ))
-                        ) : (
-                            <li>No code snippets found</li>
-                        )}
-                    </ul>
-                </>
+            {!error && result.length > 0 && (
+                <div>
+                    <h2 className="text-xl font-bold mb-4">Scraped Content</h2>
+                    {result.map(renderElement)}
+                </div>
             )}
         </>
     );

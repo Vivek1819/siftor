@@ -8,32 +8,12 @@ const port = 5000;
 app.use(cors());
 app.use(express.json());
 
-let requestQueue = null; 
-const visitedUrls = new Set(); 
-const scrapedData = []; 
+let requestQueue = null;
+const visitedUrls = new Set();
+const scrapedData = [];
 
 const fs = require('fs');
 const path = require('path');
-
-function cleanupLockFiles(lockFilePath) {
-    fs.readdir(lockFilePath, (err, files) => {
-        if (err) {
-            console.error('Error reading lock file directory:', err);
-            return;
-        }
-        files.forEach(file => {
-            if (file.endsWith('.lock')) { 
-                fs.unlink(path.join(lockFilePath, file), (unlinkErr) => {
-                    if (unlinkErr) {
-                        console.error('Error deleting lock file:', unlinkErr);
-                    } else {
-                        console.log(`Deleted old lock file: ${file}`);
-                    }
-                });
-            }
-        });
-    });
-}
 
 async function forceUnlockFile(lockFilePath) {
     try {
@@ -47,26 +27,15 @@ async function forceUnlockFile(lockFilePath) {
 }
 
 async function createRequestQueue() {
-    const maxRetries = 5;
-    const delayBetweenRetries = 1000; 
-    const lockFilePath = 'D:\\Hackatron\\up2date\\api\\storage\\request_queues\\default'; 
-    cleanupLockFiles(lockFilePath); 
+    const lockFilePath = 'D:\\Hackatron\\up2date\\api\\storage\\request_queues\\default';
+    await forceUnlockFile(lockFilePath);
 
-    for (let attempts = 0; attempts < maxRetries; attempts++) {
-        try {
-            return await RequestQueue.open();
-        } catch (error) {
-            if (error.code === 'ELOCKED') {
-                console.warn(`Lock file is already being held. Attempt ${attempts + 1}/${maxRetries}. Retrying in ${delayBetweenRetries / 1000} seconds...`);
-                await forceUnlockFile(lockFilePath); 
-                await new Promise(resolve => setTimeout(resolve, delayBetweenRetries)); 
-            } else {
-                console.error('Failed to create RequestQueue:', error);
-                throw error; 
-            }
-        }
+    try {
+        return await RequestQueue.open();
+    } catch (error) {
+        console.error('Failed to create RequestQueue:', error);
+        throw error;
     }
-    throw new Error('Unable to create RequestQueue after multiple attempts due to lock.'); 
 }
 
 app.post('/scrape', async (req, res) => {
@@ -83,7 +52,7 @@ app.post('/scrape', async (req, res) => {
     try {
         requestQueue = await createRequestQueue();
         if (!requestQueue) {
-            return res.status(500).json({ error: 'Could not open RequestQueue due to lock.' });
+            return res.status(500).json({ error: 'Could not open RequestQueue.' });
         }
     } catch (error) {
         return res.status(500).json({ error: 'Error creating request queue.' });
@@ -98,19 +67,27 @@ app.post('/scrape', async (req, res) => {
 
             if (visitedUrls.has(request.url)) {
                 console.log(`Already visited: ${request.url}`);
-                return; 
+                return;
             }
 
             visitedUrls.add(request.url);
 
-            const content = await page.content(); 
-            const headings = await page.$$eval('h1, h2, h3, h4, h5, h6', elements => elements.map(el => el.innerText));
-            const paragraphs = await page.$$eval('p', elements => elements.map(el => el.innerText));
-            const codes = await page.$$eval('pre, code', elements => elements.map(el => el.innerText)); // Scraping code components
+            const content = await page.content();
+            const elements = await page.$$eval('h1, h2, h3, h4, h5, h6, p, pre, code', nodes =>
+                nodes.map(node => {
+                    if (['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(node.tagName)) {
+                        return { type: 'heading', content: node.innerText, tag: node.tagName };
+                    } else if (node.tagName === 'P') {
+                        return { type: 'paragraph', content: node.innerText };
+                    } else if (['PRE', 'CODE'].includes(node.tagName)) {
+                        return { type: 'code', content: node.innerText };
+                    }
+                    return null;
+                }).filter(el => el !== null)
+            );
 
-            console.log(`Scraped data from ${request.url}:`, { headings, paragraphs, codes });
-
-            scrapedData.push({ url: request.url, content, headings, paragraphs, codes });
+            console.log(`Scraped data from ${request.url}:`, elements);
+            scrapedData.push({ url: request.url, elements });
 
             const links = await page.$$eval('a', anchors => anchors.map(anchor => anchor.href));
             links.forEach(link => {
@@ -131,17 +108,11 @@ app.post('/scrape', async (req, res) => {
     });
 
     try {
-        await crawler.run(); 
+        await crawler.run();
         console.log('Crawling completed. Sending response...');
 
-        const combinedData = {
-            content: scrapedData.map(data => data.content).join('\n'), 
-            headings: scrapedData.flatMap(data => data.headings),
-            paragraphs: scrapedData.flatMap(data => data.paragraphs),
-            codes: scrapedData.flatMap(data => data.codes), // Collecting code snippets
-        };
-
-        res.json(combinedData);
+        const finalData = scrapedData.flatMap(data => data.elements);
+        res.json(finalData);
     } catch (error) {
         console.error('Crawler encountered an error:', error);
         return res.status(500).json({ error: 'Crawler encountered an error.' });
@@ -160,15 +131,6 @@ function isSameDomain(base, link) {
 
 process.on('SIGINT', async () => {
     console.log('Shutting down gracefully...');
-    try {
-        const lockFilePath = 'D:\\Hackatron\\up2date\\api\\storage\\request_queues\\default';
-        if (await lockfile.check(lockFilePath)) {
-            await lockfile.unlock(lockFilePath, { force: true });
-            console.log(`Forcefully unlocked: ${lockFilePath}`);
-        }
-    } catch (err) {
-        console.error('Error during unlocking:', err);
-    }
     process.exit();
 });
 
