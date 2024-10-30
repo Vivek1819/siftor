@@ -1,157 +1,89 @@
-const express = require('express');
-const cors = require('cors');
-const { PlaywrightCrawler, RequestQueue } = require('crawlee');
-const fs = require('fs');
-const path = require('path');
-const lockfile = require('proper-lockfile'); // Import proper-lockfile
+import express from 'express';
+import cors from 'cors';
+import puppeteer from 'puppeteer';
+import * as cheerio from 'cheerio'; // Correct import for cheerio
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { URL } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 const app = express();
 const port = 5000;
 
 app.use(cors());
 app.use(express.json());
 
-let requestQueue = null;
-const visitedUrls = new Set();
-const scrapedData = [];
-
-const lockFilePath = path.join(__dirname, 'api', 'storage', 'request_queues', 'default', 'MQC1PNyT9PhRvd2.json');
-
-// Function to unlock the file if it's locked
-async function unlockIfHeld(filePath) {
-    if (fs.existsSync(filePath)) {
-        try {
-            if (await lockfile.check(filePath)) {
-                await lockfile.unlock(filePath, { realpath: false });
-                console.log(`Lock file ${filePath} has been unlocked.`);
-            } else {
-                console.log(`No lock held on file ${filePath}.`);
-            }
-        } catch (err) {
-            console.error(`Failed to unlock file ${filePath}:`, err);
-        }
-    }
-}
-
-// Function to create the request queue
-async function createRequestQueue() {
-    // Attempt to unlock the lock file first
-    await unlockIfHeld(lockFilePath);
-
-    try {
-        // Now try to create the request queue
-        return await RequestQueue.open();
-    } catch (error) {
-        console.error('Failed to create RequestQueue:', error);
-        throw error;
-    }
-}
+const MAX_PAGES = 100; // Limit the number of pages to crawl
 
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
 
+    console.log('Scraping URL:', url);
+
     if (!url) {
+        console.log('No URL provided');
         return res.status(400).json({ error: 'URL is required' });
     }
 
-    // Restrict scraping of GitHub URLs
-    if (url.includes('github.com')) {
-        return res.status(400).json({ error: 'Scraping GitHub websites is not allowed.' });
-    }
-
     try {
-        // Create request queue and handle file locks
-        requestQueue = await createRequestQueue();
-        if (!requestQueue) {
-            return res.status(500).json({ error: 'Could not open RequestQueue.' });
-        }
-    } catch (error) {
-        return res.status(500).json({ error: 'Error creating request queue.' });
-    }
+        const browser = await puppeteer.launch();
+        const page = await browser.newPage();
+        const visitedUrls = new Set();
+        const urlQueue = [url];
+        const scrapedData = [];
 
-    // Add the URL to the request queue
-    await requestQueue.addRequest({ url });
+        // Extract the base URL from the input URL
+        const baseUrl = new URL(url).origin;
 
-    const crawler = new PlaywrightCrawler({
-        requestQueue,
-        requestHandler: async ({ request, page }) => {
-            console.log(`Crawling: ${request.url}`);
-
-            // Skip URLs that have already been visited
-            if (visitedUrls.has(request.url)) {
-                console.log(`Already visited: ${request.url}`);
-                return;
+        while (urlQueue.length > 0 && visitedUrls.size < MAX_PAGES) {
+            const currentUrl = urlQueue.shift();
+            if (visitedUrls.has(currentUrl)) {
+                continue;
             }
 
-            visitedUrls.add(request.url);
-
-            // Scrape headings, paragraphs, and code blocks from the page
+            console.log(`Visiting URL: ${currentUrl}`);
+            await page.goto(currentUrl, { waitUntil: 'networkidle2' });
             const content = await page.content();
-            const elements = await page.$$eval('h1, h2, h3, h4, h5, h6, p, pre, code', nodes =>
-                nodes.map(node => {
-                    if (['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(node.tagName)) {
-                        return { type: 'heading', content: node.innerText, tag: node.tagName };
-                    } else if (node.tagName === 'P') {
-                        return { type: 'paragraph', content: node.innerText };
-                    } else if (['PRE', 'CODE'].includes(node.tagName)) {
-                        return { type: 'code', content: node.innerText };
+            const $ = cheerio.load(content);
+
+            // Example: Scrape all text content from the page
+            const pageData = $('body').text();
+            scrapedData.push({ url: currentUrl, data: pageData });
+
+            // Find all links on the page and add them to the queue if they belong to the same domain
+            $('a[href]').each((_, element) => {
+                const link = $(element).attr('href');
+                if (link && !visitedUrls.has(link)) {
+                    try {
+                        const absoluteLink = new URL(link, baseUrl).href;
+                        if (absoluteLink.startsWith(baseUrl)) {
+                            urlQueue.push(absoluteLink);
+                        }
+                    } catch (e) {
+                        // Ignore invalid URLs
                     }
-                    return null;
-                }).filter(el => el !== null)
-            );
-
-            console.log(`Scraped data from ${request.url}:`, elements);
-            scrapedData.push({ url: request.url, elements });
-
-            // Get links from the page and add to the queue if they belong to the same domain
-            const links = await page.$$eval('a', anchors => anchors.map(anchor => anchor.href));
-            links.forEach(link => {
-                if (isSameDomain(url, link) && !visitedUrls.has(link)) {
-                    console.log(`Adding URL to queue: ${link}`);
-                    requestQueue.addRequest({ url: link });
-                } else {
-                    console.log(`Invalid or already visited URL skipped: ${link}`);
                 }
             });
-        },
-        failedRequestHandler: async ({ request }) => {
-            console.log(`Request ${request.url} failed.`);
-        },
-        maxConcurrency: 10,
-        navigationTimeoutSecs: 60,
-        requestHandlerTimeoutSecs: 300,
-    });
 
-    try {
-        // Run the crawler
-        await crawler.run();
-        console.log('Crawling completed. Sending response...');
+            visitedUrls.add(currentUrl);
+        }
 
-        const finalData = scrapedData.flatMap(data => data.elements);
-        res.json(finalData);
+        console.log('Closing Puppeteer...');
+        await browser.close();
+
+        res.json({ scrapedData });
+
     } catch (error) {
-        console.error('Crawler encountered an error:', error);
-        return res.status(500).json({ error: 'Crawler encountered an error.' });
+        console.error('Unexpected Error:', error);
+        return res.status(500).json({ error: 'An unexpected error occurred.' });
     }
 });
 
-// Helper function to check if the link belongs to the same domain
-function isSameDomain(base, link) {
-    try {
-        const baseUrl = new URL(base);
-        const linkUrl = new URL(link);
-        return baseUrl.hostname === linkUrl.hostname && linkUrl.href.startsWith(baseUrl.origin);
-    } catch (_) {
-        return false;
-    }
-}
-
-// Gracefully shutdown on SIGINT
-process.on('SIGINT', async () => {
-    console.log('Shutting down gracefully...');
-    process.exit();
-});
-
-// Start the server
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
