@@ -1,7 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const { PlaywrightCrawler, RequestQueue } = require('crawlee');
-const lockfile = require('proper-lockfile'); 
+const fs = require('fs');
+const path = require('path');
+const lockfile = require('proper-lockfile'); // Import proper-lockfile
 const app = express();
 const port = 5000;
 
@@ -12,25 +14,31 @@ let requestQueue = null;
 const visitedUrls = new Set();
 const scrapedData = [];
 
-const fs = require('fs');
-const path = require('path');
+const lockFilePath = path.join(__dirname, 'api', 'storage', 'request_queues', 'default', 'MQC1PNyT9PhRvd2.json');
 
-async function forceUnlockFile(lockFilePath) {
-    try {
-        if (await lockfile.check(lockFilePath)) {
-            await lockfile.unlock(lockFilePath, { realpath: false, force: true });
-            console.log(`Forcefully unlocked: ${lockFilePath}`);
+// Function to unlock the file if it's locked
+async function unlockIfHeld(filePath) {
+    if (fs.existsSync(filePath)) {
+        try {
+            if (await lockfile.check(filePath)) {
+                await lockfile.unlock(filePath, { realpath: false });
+                console.log(`Lock file ${filePath} has been unlocked.`);
+            } else {
+                console.log(`No lock held on file ${filePath}.`);
+            }
+        } catch (err) {
+            console.error(`Failed to unlock file ${filePath}:`, err);
         }
-    } catch (err) {
-        console.error(`Error forcefully unlocking ${lockFilePath}:`, err);
     }
 }
 
+// Function to create the request queue
 async function createRequestQueue() {
-    const lockFilePath = 'D:\\Hackatron\\up2date\\api\\storage\\request_queues\\default';
-    await forceUnlockFile(lockFilePath);
+    // Attempt to unlock the lock file first
+    await unlockIfHeld(lockFilePath);
 
     try {
+        // Now try to create the request queue
         return await RequestQueue.open();
     } catch (error) {
         console.error('Failed to create RequestQueue:', error);
@@ -45,11 +53,13 @@ app.post('/scrape', async (req, res) => {
         return res.status(400).json({ error: 'URL is required' });
     }
 
+    // Restrict scraping of GitHub URLs
     if (url.includes('github.com')) {
         return res.status(400).json({ error: 'Scraping GitHub websites is not allowed.' });
     }
 
     try {
+        // Create request queue and handle file locks
         requestQueue = await createRequestQueue();
         if (!requestQueue) {
             return res.status(500).json({ error: 'Could not open RequestQueue.' });
@@ -58,6 +68,7 @@ app.post('/scrape', async (req, res) => {
         return res.status(500).json({ error: 'Error creating request queue.' });
     }
 
+    // Add the URL to the request queue
     await requestQueue.addRequest({ url });
 
     const crawler = new PlaywrightCrawler({
@@ -65,6 +76,7 @@ app.post('/scrape', async (req, res) => {
         requestHandler: async ({ request, page }) => {
             console.log(`Crawling: ${request.url}`);
 
+            // Skip URLs that have already been visited
             if (visitedUrls.has(request.url)) {
                 console.log(`Already visited: ${request.url}`);
                 return;
@@ -72,6 +84,7 @@ app.post('/scrape', async (req, res) => {
 
             visitedUrls.add(request.url);
 
+            // Scrape headings, paragraphs, and code blocks from the page
             const content = await page.content();
             const elements = await page.$$eval('h1, h2, h3, h4, h5, h6, p, pre, code', nodes =>
                 nodes.map(node => {
@@ -89,6 +102,7 @@ app.post('/scrape', async (req, res) => {
             console.log(`Scraped data from ${request.url}:`, elements);
             scrapedData.push({ url: request.url, elements });
 
+            // Get links from the page and add to the queue if they belong to the same domain
             const links = await page.$$eval('a', anchors => anchors.map(anchor => anchor.href));
             links.forEach(link => {
                 if (isSameDomain(url, link) && !visitedUrls.has(link)) {
@@ -108,6 +122,7 @@ app.post('/scrape', async (req, res) => {
     });
 
     try {
+        // Run the crawler
         await crawler.run();
         console.log('Crawling completed. Sending response...');
 
@@ -119,6 +134,7 @@ app.post('/scrape', async (req, res) => {
     }
 });
 
+// Helper function to check if the link belongs to the same domain
 function isSameDomain(base, link) {
     try {
         const baseUrl = new URL(base);
@@ -129,11 +145,13 @@ function isSameDomain(base, link) {
     }
 }
 
+// Gracefully shutdown on SIGINT
 process.on('SIGINT', async () => {
     console.log('Shutting down gracefully...');
     process.exit();
 });
 
+// Start the server
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
