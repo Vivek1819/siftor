@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import puppeteer from 'puppeteer';
-import * as cheerio from 'cheerio'; // Correct import for cheerio
+import * as cheerio from 'cheerio'; 
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,7 +18,7 @@ const port = 5000;
 app.use(cors());
 app.use(express.json());
 
-const MAX_PAGES = 100; // Limit the number of pages to crawl
+const MAX_PAGES = 5000; 
 
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
@@ -39,6 +39,7 @@ app.post('/scrape', async (req, res) => {
 
         // Extract the base URL from the input URL
         const baseUrl = new URL(url).origin;
+        console.log(baseUrl);
 
         while (urlQueue.length > 0 && visitedUrls.size < MAX_PAGES) {
             const currentUrl = urlQueue.shift();
@@ -51,11 +52,16 @@ app.post('/scrape', async (req, res) => {
             const content = await page.content();
             const $ = cheerio.load(content);
 
-            // Example: Scrape all text content from the page
-            const pageData = $('body').text();
+            const tags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'li'];
+            let pageData = '';
+            tags.forEach(tag => {
+                $(tag).each((_, element) => {
+                    pageData += $(element).text().replace(/\s+/g, ' ').trim() + ' ';
+                });
+            });
+            pageData = pageData.trim();
             scrapedData.push({ url: currentUrl, data: pageData });
 
-            // Find all links on the page and add them to the queue if they belong to the same domain
             $('a[href]').each((_, element) => {
                 const link = $(element).attr('href');
                 if (link && !visitedUrls.has(link)) {
