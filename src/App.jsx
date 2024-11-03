@@ -1,28 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 function App() {
     const [url, setUrl] = useState('');
     const [result, setResult] = useState([]);
     const [error, setError] = useState('');
-    const [currentUrl, setCurrentUrl] = useState('');
-
-    useEffect(() => {
-        const ws = new WebSocket(`ws://${window.location.hostname}:5000`);
-
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            setCurrentUrl(data.currentUrl);
-        };
-
-        return () => {
-            ws.close();
-        };
-    }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-
+        
         const response = await fetch('http://localhost:5000/scrape', {
             method: 'POST',
             headers: {
@@ -33,7 +19,7 @@ function App() {
 
         if (response.ok) {
             const data = await response.json();
-            setResult(data.scrapedData);
+            setResult(data.scrapedData); 
         } else {
             const errorData = await response.json();
             setError(errorData.error || 'Failed to scrape the website');
@@ -83,12 +69,6 @@ function App() {
             </form>
 
             {error && <p className="text-red-500">{error}</p>}
-
-            {currentUrl && (
-                <div className="text-center mb-4">
-                    <p className="text-lg">Currently Visiting: {currentUrl}</p>
-                </div>
-            )}
 
             {!error && result.length > 0 && (
                 <div>

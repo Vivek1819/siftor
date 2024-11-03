@@ -6,7 +6,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { URL } from 'url';
-import { WebSocketServer } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,23 +18,7 @@ const port = 5000;
 app.use(cors());
 app.use(express.json());
 
-const MAX_PAGES = 500; 
-
-const server = app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
-});
-
-const wss = new WebSocketServer({ server });
-
-let wsClient = null;
-wss.on('connection', (ws) => {
-    wsClient = ws;
-    console.log('WebSocket client connected');
-    ws.on('close', () => {
-        wsClient = null;
-        console.log('WebSocket client disconnected');
-    });
-});
+const MAX_PAGES = 1000; 
 
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
@@ -55,7 +38,7 @@ app.post('/scrape', async (req, res) => {
         const scrapedData = [];
 
         const baseUrl = new URL(url).origin;
-        console.log(baseUrl);
+        console.log('Base URL:', baseUrl);
 
         while (urlQueue.length > 0 && visitedUrls.size < MAX_PAGES) {
             const currentUrl = urlQueue.shift();
@@ -64,22 +47,34 @@ app.post('/scrape', async (req, res) => {
             }
 
             console.log(`Visiting URL: ${currentUrl}`);
-            if (wsClient) {
-                wsClient.send(JSON.stringify({ currentUrl }));
-            }
-
             await page.goto(currentUrl, { waitUntil: 'networkidle2' });
             const content = await page.content();
             const $ = cheerio.load(content);
 
-            const tags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'li'];
-            let pageData = '';
-            tags.forEach(tag => {
-                $(tag).each((_, element) => {
-                    pageData += $(element).text().replace(/\s+/g, ' ').trim() + '\n';
-                });
+            const pageData = [];
+            let currentSection = { title: "", content: [] };
+
+            $('h1, h2, h3, h4, h5, h6, p, span, li, pre, code').each((_, element) => {
+                const tag = $(element).prop('tagName').toLowerCase();
+                const text = $(element).text().trim();
+
+                if (text) {
+                    if (tag.startsWith('h')) {
+                        if (currentSection.content.length > 0) {
+                            pageData.push(currentSection);
+                        }
+                        currentSection = { title: text, content: [] };
+                    } else {
+                        
+                        currentSection.content.push({ tag, text });
+                    }
+                }
             });
-            pageData = pageData.trim();
+
+            if (currentSection.content.length > 0) {
+                pageData.push(currentSection);
+            }
+
             scrapedData.push({ url: currentUrl, data: pageData });
 
             $('a[href]').each((_, element) => {
@@ -108,4 +103,9 @@ app.post('/scrape', async (req, res) => {
         console.error('Unexpected Error:', error);
         return res.status(500).json({ error: 'An unexpected error occurred.' });
     }
+});
+
+
+app.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
 });
