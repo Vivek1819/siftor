@@ -25,10 +25,10 @@ app.use(express.json());
 const MAX_PAGES = 1000; 
 
 wss.on('connection', (ws) => {
-    console.log('A user connected');
+    console.log('Websocket connected');
 
     ws.on('close', () => {
-        console.log('A user disconnected');
+        console.log('Websocket disconnected');
     });
 
     ws.on('message', async (message) => {
@@ -41,8 +41,9 @@ wss.on('connection', (ws) => {
             return;
         }
 
+        let browser;
         try {
-            const browser = await puppeteer.launch();
+            browser = await puppeteer.launch();
             const page = await browser.newPage();
             const visitedUrls = new Set();
             const urlQueue = [url];
@@ -59,7 +60,14 @@ wss.on('connection', (ws) => {
 
                 console.log(`Visiting URL: ${currentUrl}`);
                 ws.send(JSON.stringify({ visiting: currentUrl })); // Emit the currently visiting URL
-                await page.goto(currentUrl, { waitUntil: 'networkidle2' });
+
+                try {
+                    await page.goto(currentUrl, { waitUntil: 'networkidle2' });
+                } catch (error) {
+                    console.error(`Failed to navigate to ${currentUrl}:`, error);
+                    continue; // Skip this URL and continue with the next one
+                }
+
                 const content = await page.content();
                 const $ = cheerio.load(content);
 
@@ -113,6 +121,9 @@ wss.on('connection', (ws) => {
         } catch (error) {
             console.error('Unexpected Error:', error);
             ws.send(JSON.stringify({ error: 'An unexpected error occurred.' }));
+            if (browser) {
+                await browser.close();
+            }
         }
     });
 });

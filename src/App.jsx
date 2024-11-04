@@ -6,6 +6,8 @@ function App() {
     const [error, setError] = useState('');
     const [currentUrl, setCurrentUrl] = useState('');
     const [ws, setWs] = useState(null);
+    const [isScraping, setIsScraping] = useState(false);
+    const [isInitial, setIsInitial] = useState(true);
 
     useEffect(() => {
         const socket = new WebSocket('ws://localhost:5000');
@@ -19,14 +21,18 @@ function App() {
             if (data.visiting) {
                 console.log('Currently visiting:', data.visiting);
                 setCurrentUrl(data.visiting);
+                setIsScraping(true);
+                setIsInitial(false);
             } else if (data.scrapedData) {
                 console.log('Scraped data received:', data.scrapedData);
                 setResult(data.scrapedData);
                 setCurrentUrl('');
+                setIsScraping(false);
             } else if (data.error) {
                 console.error('Error:', data.error);
                 setError(data.error);
                 setCurrentUrl('');
+                setIsScraping(false);
             }
         };
 
@@ -46,6 +52,7 @@ function App() {
         setError('');
         setCurrentUrl('');
         setResult([]);
+        setIsInitial(false);
 
         if (ws) {
             ws.send(JSON.stringify({ url }));
@@ -77,9 +84,12 @@ function App() {
     );
 
     return (
-        <div className="bg-gradient-to-r from-black via-zinc-700 to-zinc-600 container mx-auto p-4">
-            <h1 className="text-white text-5xl font-bold text-center m-4 mb-14">up2date</h1>
-            {!currentUrl && (
+        <div className={`bg-custom-diagonal bg-[length:200%_200%] animate-gradient-flow container mx-auto p-4 ${isInitial || isScraping ? 'h-screen flex flex-col justify-center items-center' : ''}`}>
+            {(!isScraping && result.length === 0) && (
+                <h1 className="text-white text-5xl font-bold text-center mb-14">up2date</h1>
+            )}
+            
+            {isInitial && (
                 <form onSubmit={handleSubmit} className="text-center flex items-center justify-center mb-4">
                     <input
                         type="text"
@@ -92,14 +102,18 @@ function App() {
                 </form>
             )}
 
-            {currentUrl && (
-                <p className="text-white text-center">Currently visiting: {currentUrl}</p>
+            {isScraping && (
+                <div className="flex flex-col justify-center items-center h-screen">
+                    <h1 className="text-white text-5xl font-bold text-center mb-4">up2date</h1>
+                    <p className="text-zinc-400 text-center">Currently visiting: {currentUrl}</p>
+                </div>
             )}
 
             {error && <p className="text-red-500">{error}</p>}
 
             {!error && result.length > 0 && (
                 <div>
+                    <h1 className="text-white text-5xl font-bold text-center mb-14">up2date</h1>
                     {result.map((page, pageIndex) => (
                         <div key={pageIndex} className="mb-8">
                             <h3 className="text-white text-2xl font-bold mb-4 text-center mt-4">{page.url}</h3>
