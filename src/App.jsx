@@ -1,29 +1,54 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 function App() {
     const [url, setUrl] = useState('');
     const [result, setResult] = useState([]);
     const [error, setError] = useState('');
+    const [currentUrl, setCurrentUrl] = useState('');
+    const [ws, setWs] = useState(null);
 
-    const handleSubmit = async (e) => {
+    useEffect(() => {
+        const socket = new WebSocket('ws://localhost:5000');
+
+        socket.onopen = () => {
+            console.log('Connected to WebSocket server');
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.visiting) {
+                console.log('Currently visiting:', data.visiting);
+                setCurrentUrl(data.visiting);
+            } else if (data.scrapedData) {
+                console.log('Scraped data received:', data.scrapedData);
+                setResult(data.scrapedData);
+                setCurrentUrl('');
+            } else if (data.error) {
+                console.error('Error:', data.error);
+                setError(data.error);
+                setCurrentUrl('');
+            }
+        };
+
+        socket.onclose = () => {
+            console.log('Disconnected from WebSocket server');
+        };
+
+        setWs(socket);
+
+        return () => {
+            socket.close();
+        };
+    }, []);
+
+    const handleSubmit = (e) => {
         e.preventDefault();
         setError('');
+        setCurrentUrl('');
+        setResult([]);
 
-        const response = await fetch('http://localhost:5000/scrape', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ url }),
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            setResult(data.scrapedData);
-        } else {
-            const errorData = await response.json();
-            setError(errorData.error || 'Failed to scrape the website');
-            setResult([]);
+        if (ws) {
+            ws.send(JSON.stringify({ url }));
         }
     };
 
@@ -32,14 +57,10 @@ function App() {
             switch (element.tag) {
                 case 'p':
                     return <p key={index} className="text-white mb-2">{element.text}</p>;
-                // case 'span':
-                //     return <span key={index} className="text-white block mb-2">{element.text}</span>;
                 case 'li':
                     return <li key={index} className="text-white ml-4 list-disc">{element.text}</li>;
                 case 'pre':
                     return <pre key={index} className="bg-gray-100 p-2 rounded white text-wrap">{element.text}</pre>;
-                // case 'code':
-                //     return <code key={index} className="bg-gray-200 p-1 rounded">{element.text}</code>;
                 default:
                     return null;
             }
@@ -58,16 +79,22 @@ function App() {
     return (
         <div className="bg-gradient-to-r from-black via-zinc-700 to-zinc-600 container mx-auto p-4">
             <h1 className="text-white text-5xl font-bold text-center m-4 mb-14">up2date</h1>
-            <form onSubmit={handleSubmit} className="text-center flex items-center justify-center mb-4">
-                <input
-                    type="text"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="Enter URL"
-                    className="text-white bg-zinc-700 rounded text-center p-2 mr-2"
-                />
-                <button type="submit" className="bg-white text-black p-2 rounded">Scrape</button>
-            </form>
+            {!currentUrl && (
+                <form onSubmit={handleSubmit} className="text-center flex items-center justify-center mb-4">
+                    <input
+                        type="text"
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        placeholder="Enter URL"
+                        className="text-white bg-zinc-700 rounded text-center p-2 mr-2"
+                    />
+                    <button type="submit" className="bg-white text-black p-2 rounded">Scrape</button>
+                </form>
+            )}
+
+            {currentUrl && (
+                <p className="text-white text-center">Currently visiting: {currentUrl}</p>
+            )}
 
             {error && <p className="text-red-500">{error}</p>}
 
