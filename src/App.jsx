@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
     const [url, setUrl] = useState('');
@@ -8,6 +9,7 @@ function App() {
     const [ws, setWs] = useState(null);
     const [isScraping, setIsScraping] = useState(false);
     const [isInitial, setIsInitial] = useState(true);
+    const [visitedUrls, setVisitedUrls] = useState([]); // State to manage the list of visited URLs
 
     useEffect(() => {
         const socket = new WebSocket('ws://localhost:5000');
@@ -23,6 +25,7 @@ function App() {
                 setCurrentUrl(data.visiting);
                 setIsScraping(true);
                 setIsInitial(false);
+                updateVisitedUrls(data.visiting);
             } else if (data.scrapedData) {
                 console.log('Scraped data received:', data.scrapedData);
                 setResult(data.scrapedData);
@@ -46,6 +49,16 @@ function App() {
             socket.close();
         };
     }, []);
+
+    const updateVisitedUrls = (newUrl) => {
+        setVisitedUrls((prevUrls) => {
+            const updatedUrls = [...prevUrls, newUrl];
+            if (updatedUrls.length > 3) {
+                updatedUrls.shift(); // Remove the oldest URL if the list exceeds 3 items
+            }
+            return updatedUrls;
+        });
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -104,8 +117,23 @@ function App() {
 
             {isScraping && (
                 <div className="flex flex-col justify-center items-center h-screen">
-                    <h1 className="text-white text-5xl font-bold text-center mb-4">up2date</h1>
-                    <p className="text-zinc-400 text-center">Currently visiting: {currentUrl}</p>
+                    <h1 className="text-white text-5xl font-bold text-center p-10 relative">up2date</h1>
+                    <ul className="text-zinc-400 text-center">
+                    <AnimatePresence>
+                        {visitedUrls.map((url, index) => (
+                            <motion.li
+                                key={url}
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.8 }}
+                                transition={{ duration: 0.5 }}
+                                className="mb-2"
+                            >
+                                {url}
+                            </motion.li>
+                        ))}
+                    </AnimatePresence>
+                </ul>
                 </div>
             )}
 
@@ -122,6 +150,7 @@ function App() {
                     ))}
                 </div>
             )}
+
         </div>
     );
 }
