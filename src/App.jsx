@@ -99,7 +99,7 @@ function App() {
     return (
         <div className={`bg-custom-diagonal bg-[length:200%_200%] animate-gradient-flow container mx-auto p-4 ${isInitial || isScraping ? 'h-screen flex flex-col justify-center items-center' : ''}`}>
             {(!isScraping && result.length === 0) && (
-                <h1 className="text-white text-5xl font-bold text-center mb-14" style={{ fontFamily: 'Montserrat, sans-serif' }}>up2date</h1>
+                <h1 className="text-white text-5xl font-bold text-center mb-14 tracking-wider" style={{ fontFamily: 'Montserrat, sans-serif' }}>Siftor</h1>
             )}
             
             {isInitial && (
@@ -118,7 +118,7 @@ function App() {
 
             {isScraping && (
                 <div className="flex flex-col justify-center items-center h-screen">
-                    <h1 className="text-white text-5xl font-bold text-center p-10 relative" style={{ fontFamily: 'Montserrat, sans-serif' }}>up2date</h1>
+                    <h1 className="text-white text-5xl font-bold text-center p-10 relative tracking-wider" style={{ fontFamily: 'Montserrat, sans-serif' }}>Siftor</h1>
                     <ul className="text-zinc-300 text-center" style={{ fontFamily: 'Montserrat, sans-serif' }}>
                     <AnimatePresence>
                         {visitedUrls.map((url, index) => (
@@ -142,7 +142,7 @@ function App() {
 
             {!error && result.length > 0 && (
                 <div style={{ fontFamily: 'Montserrat, sans-serif' }}>
-                    <h1 className="text-white text-5xl font-bold text-center mb-14" style={{ fontFamily: 'Montserrat, sans-serif' }}>up2date</h1>
+                    <h1 className="text-white text-5xl font-bold text-center mb-14 tracking-wider" style={{ fontFamily: 'Montserrat, sans-serif' }}>siftor</h1>
                     {result.map((page, pageIndex) => (
                         <div key={pageIndex} className="mb-8">
                             <h3 className="text-white text-2xl font-bold mb-4 text-center mt-4">{page.url}</h3>
